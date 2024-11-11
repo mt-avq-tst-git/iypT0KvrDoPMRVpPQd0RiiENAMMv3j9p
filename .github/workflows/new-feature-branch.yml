@@ -1,0 +1,51 @@
+name: Branch Management Workflow
+
+on:
+  create:
+    branches:
+      - 'development/*'
+
+jobs:
+  manage-branches:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'development/')
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Validate branch name and create branches
+        env:
+          BASE_BRANCH: 'master'
+          FEATURE_BRANCH: ${{ github.ref_name }}
+        run: |
+          # Extract feature name from 'development/<featureA>'
+          FEATURE_NAME=$(echo "${FEATURE_BRANCH}" | sed 's|^development/||')
+
+          # Ensure this branch was created from master
+          BASE_COMMIT=$(git rev-parse origin/${BASE_BRANCH})
+          BRANCH_COMMIT=$(git rev-parse origin/${FEATURE_BRANCH}^0)
+          if [ "$BASE_COMMIT" != "$BRANCH_COMMIT" ]; then
+            echo "The branch was not created from 'master'. Exiting..."
+            exit 1
+          fi
+
+          # Create the required branches from master if they don't exist
+          for branch in pre-release staging development; do
+            if ! git show-ref --verify --quiet refs/heads/$branch; then
+              echo "Creating branch '$branch' from '$BASE_BRANCH'"
+              git checkout -b $branch $BASE_BRANCH
+              git push origin $branch
+            else
+              echo "Branch '$branch' already exists. Skipping..."
+            fi
+          done
+
+          # Create the feature branch from 'development'
+          FEATURE_BRANCH_FROM_DEV="development/$FEATURE_NAME"
+          if ! git show-ref --verify --quiet refs/heads/$FEATURE_BRANCH_FROM_DEV; then
+            echo "Creating branch '$FEATURE_BRANCH_FROM_DEV' from 'development'"
+            git checkout -b "$FEATURE_BRANCH_FROM_DEV" development
+            git push origin "$FEATURE_BRANCH_FROM_DEV"
+          else
+            echo "Feature branch '$FEATURE_BRANCH_FROM_DEV' already exists. Skipping..."
+          fi
